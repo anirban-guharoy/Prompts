@@ -1,0 +1,522 @@
+# GitHub Copilot Agent Mode — Build a Production-Grade JIRA Test Case Generation Agent on Azure AKS
+
+## Role
+
+Act as a Principal AI Architect, senior Node.js/TypeScript developer, Azure cloud architect, MCP integration engineer and Kubernetes specialist.
+
+Implement a complete, production-oriented application in the current GitHub repository. Do not stop at architecture descriptions or pseudocode. Create the source code, tests, database migrations, Dockerfiles, Helm charts, CI/CD workflows and deployment documentation.
+
+Inspect the existing repository before making changes. Preserve useful existing code and conventions. If a component cannot be verified against the available SDK or service, implement a clean adapter interface and mock rather than inventing APIs.
+
+## 1. Business requirement
+
+Build a supervised AI agent that:
+
+1. Accepts a JIRA user story key.
+2. Authenticates and authorizes the requesting user.
+3. Reads the story description and acceptance criteria through an existing remote MCP server.
+4. Retrieves relevant context from Confluence, Figma, existing test cases and enterprise knowledge sources through MCP.
+5. Analyzes acceptance criteria and identifies missing requirements and ambiguities.
+6. Generates high-quality manual test cases using Claude Opus through Azure AI Foundry.
+7. Validates the generated cases and checks acceptance-criteria coverage and duplication.
+8. Saves test cases as drafts.
+9. Allows a QA reviewer to approve, reject, edit or request regeneration.
+10. Publishes approved test cases through a configured JIRA or test-management integration.
+11. Records audit events, workflow status, errors, model usage and quality metrics.
+
+**Mandatory rule:** Generated test cases must remain drafts until an authorized human approves them. The LLM must never approve its own output or directly execute privileged publishing operations.
+
+## 2. Technology stack
+
+Use current, mutually compatible, maintained versions of:
+
+* Node.js LTS and TypeScript with strict type checking.
+* LangGraph.js for workflow orchestration.
+* LangChain.js for model and tool integration where appropriate.
+* The official MCP TypeScript SDK for remote MCP communication.
+* Claude Opus through a verified Azure AI Foundry deployment.
+* Zod for runtime schemas and structured validation.
+* Fastify for the REST API.
+* PostgreSQL for application data and durable workflow state.
+* Azure Service Bus for asynchronous job processing.
+* Microsoft Entra ID for user authentication.
+* Microsoft Entra Workload ID for Azure resource access from AKS.
+* Azure Key Vault for secrets where necessary.
+* Azure Container Registry for container images.
+* Azure Kubernetes Service for hosting.
+* OpenTelemetry and Azure Monitor/Application Insights for observability.
+* Vitest for automated tests.
+* ESLint and Prettier for code quality.
+* Docker, Helm and GitHub Actions for deployment.
+
+Pin dependencies through a lockfile. Verify SDK signatures and supported model endpoint capabilities. Do not invent package methods, authentication flows, model identifiers or configuration options.
+
+## 3. Required architecture
+
+Create the following logical components.
+
+### A. Agent API
+
+Implement a Fastify API that:
+
+* Accepts generation requests containing a JIRA issue key.
+* Validates input and authenticates users.
+* Enforces project-level authorization.
+* Creates an asynchronous generation job.
+* Publishes a versioned message to Azure Service Bus.
+* Returns a job ID and status URL.
+* Exposes endpoints for status, drafts, coverage, review, publication and cancellation.
+* Applies request size limits, rate limiting and consistent error handling.
+
+### B. Agent worker
+
+Implement a separate worker deployment that:
+
+* Consumes Azure Service Bus messages.
+* Executes the LangGraph workflow.
+* Retrieves context through MCP.
+* Invokes the configured model adapter.
+* Validates and persists drafts.
+* Supports bounded retries, dead-letter handling and graceful shutdown.
+* Uses idempotency controls to prevent duplicate effects.
+* Resumes recoverable jobs after pod restarts.
+
+### C. LangGraph workflow
+
+Implement individually testable workflow nodes:
+
+1. `authorizeRequest`
+2. `fetchJiraStory`
+3. `retrieveEnterpriseContext`
+4. `normalizeAcceptanceCriteria`
+5. `analyzeRequirements`
+6. `detectAmbiguities`
+7. `generateTestCases`
+8. `validateTestCases`
+9. `evaluateCoverage`
+10. `detectDuplicates`
+11. `persistDraft`
+12. `awaitHumanReview`
+13. `publishApprovedCases`
+14. `recordAuditOutcome`
+
+Define explicit state types, node contracts, conditional edges, error paths and retry limits.
+
+Handle missing acceptance criteria by returning a clarification request instead of inventing requirements. Persist workflow checkpoints and support recovery using a compatible PostgreSQL-backed LangGraph checkpointer or an explicitly documented durable recovery strategy.
+
+Do not implement an uncontrolled autonomous agent loop.
+
+## 4. Existing MCP server integration
+
+The MCP server already exists and is deployed in a separate Azure AKS cluster. Do not redeploy it.
+
+Implement a configurable remote MCP client supporting:
+
+* The server's configured endpoint and supported transport.
+* Authentication compatible with the actual MCP server.
+* Tool discovery and an explicit tool allowlist.
+* Request timeouts and bounded retries.
+* Structured error handling.
+* Correlation IDs and sanitized logs.
+* Separation of read-only operations from write operations.
+
+Define application-level wrappers for these logical operations:
+
+* `getJiraIssue`
+* `getLinkedIssues`
+* `searchConfluence`
+* `getConfluencePage`
+* `getFigmaDesign`
+* `searchExistingTestCases`
+* `createTestCases`
+
+These are logical application operations, not assumed actual MCP tool names. Discover the server's real tools and map them using configuration.
+
+Include a mock MCP adapter for local development and automated testing.
+
+Do not allow the model to call arbitrary MCP tools. The application must enforce tool permissions, project authorization and publishing restrictions.
+
+Treat retrieved JIRA descriptions, comments, Confluence pages and design annotations as untrusted data. Defend against prompt injection and malicious instructions embedded in retrieved content.
+
+## 5. Azure AI Foundry and Claude Opus
+
+Create a provider-neutral interface:
+
+`TestGenerationModel`
+
+Implement:
+
+* An Azure AI Foundry adapter for the verified Claude Opus endpoint.
+* A deterministic fake model for local development and automated tests.
+* Configurable endpoint, deployment/model identifier, API version and authentication.
+* Request timeouts and bounded retry policies.
+* Output validation and parsing.
+* Model and prompt version tracking.
+* Usage, latency and token-cost metadata where available.
+
+Use managed/workload identity where supported by the actual endpoint. Otherwise use an approved credential mechanism with secrets held in Key Vault.
+
+Do not hardcode credentials, subscription IDs, resource names or model deployments.
+
+Do not assume every endpoint supports constrained structured output. Use the supported response mechanism and fall back to JSON parsing plus Zod validation when necessary.
+
+## 6. Manual test-case schema
+
+Create strict Zod schemas for all model outputs and API payloads.
+
+A `TestCase` must include:
+
+* `id`
+* `title`
+* `objective`
+* `testType`
+* `priority`
+* `preconditions`
+* `testData`
+* `steps`
+* `acceptanceCriteriaIds`
+* `sourceReferences`
+* `assumptions`
+* `expectedOutcome`
+* `requiresClarification`
+* `clarificationQuestions`
+
+Each step must include `stepNumber`, `action` and `expectedResult`.
+
+Allowed test types should include positive, negative, boundary, validation, authorization, integration, usability and regression. Allowed priorities should include critical, high, medium and low.
+
+Also create schemas for normalized acceptance criteria, generation jobs, retrieved context, workflow state, coverage results, duplicate detection, review decisions, publication requests and audit events.
+
+Enforce required fields, enumerations, maximum string lengths, array bounds and valid references.
+
+The model must never fabricate source references. If the application creates normalized criterion identifiers, mark them as application-generated.
+
+## 7. Test generation logic
+
+Create versioned system instructions and prompt templates.
+
+Generate relevant test cases covering, where applicable:
+
+* Positive scenarios.
+* Negative scenarios.
+* Boundary conditions.
+* Input validation.
+* Business-rule enforcement.
+* Authorization and access control.
+* Integration failures.
+* Error handling.
+* Regression risks.
+
+For every case, include concrete actions and observable expected results.
+
+Maintain traceability from each test case to its acceptance criteria. Explicitly distinguish facts from assumptions. Identify ambiguous requirements and generate clarification questions.
+
+Do not force irrelevant test categories onto every story, duplicate cases unnecessarily or infer undocumented business behavior as fact.
+
+Retrieve only relevant enterprise context. Do not send entire knowledge repositories to the model.
+
+## 8. Quality assurance and coverage
+
+Implement deterministic validation for:
+
+* Schema compliance.
+* Non-empty and actionable test steps.
+* Expected-result completeness.
+* Source-reference validity.
+* Duplicate case IDs.
+* Candidate duplicate detection.
+* Acceptance-criteria coverage.
+* Ambiguity detection.
+* Output size limits.
+* Publication idempotency.
+
+For each acceptance criterion, generate a coverage record containing:
+
+* Criterion identifier and source text.
+* Linked test-case identifiers.
+* Coverage status: `covered`, `partially_covered`, `uncovered` or `requires_clarification`.
+* Supporting evidence.
+* Identified gaps.
+
+Do not equate the existence of a linked test case with actual coverage. Validate whether the actions and expected results test the criterion.
+
+Implement configurable text normalization and similarity-based duplicate detection. Flag potential duplicates for review; do not automatically discard them.
+
+## 9. Human approval and API
+
+Implement the following endpoints:
+
+* `POST /api/v1/generations`
+* `GET /api/v1/generations/:jobId`
+* `GET /api/v1/generations/:jobId/test-cases`
+* `GET /api/v1/generations/:jobId/coverage`
+* `POST /api/v1/generations/:jobId/review`
+* `POST /api/v1/generations/:jobId/publish`
+* `POST /api/v1/generations/:jobId/cancel`
+* `GET /health/live`
+* `GET /health/ready`
+
+Implement these states:
+
+`queued`, `running`, `draft_ready`, `awaiting_review`, `needs_clarification`, `approved`, `rejected`, `publishing`, `published`, `failed`, `cancelled`.
+
+Enforce valid state transitions in application code and in transactional persistence logic.
+
+Before publishing, verify:
+
+1. The reviewer is authenticated and authorized.
+2. The approval is valid and has not been revoked.
+3. The draft version matches the approved version.
+4. The source story has not materially changed.
+5. No equivalent publication already exists.
+6. The configured destination and write operation are authorized.
+
+Persist external test-case identifiers and the final publication result.
+
+Implement optimistic concurrency controls and audit all review and publishing decisions.
+
+## 10. Authentication and security
+
+Implement Microsoft Entra ID authentication with a maintained library compatible with Fastify.
+
+Validate token signature, issuer, audience, tenant and expiration. Validate the required scopes or application roles.
+
+Implement:
+
+* Project-level authorization.
+* Separate identities for API, worker and publishing components where practical.
+* Entra Workload ID for Azure resources.
+* Least-privilege RBAC.
+* TLS and restricted network connectivity.
+* Network policies and outbound destination restrictions.
+* Secret redaction and sensitive-data minimization.
+* Non-root containers.
+* Read-only container filesystems where practical.
+* Dependency and container image scanning.
+* Production rejection of development authentication modes.
+
+Do not assume user authentication automatically propagates through MCP to JIRA. Explicitly implement delegated identity or backend authorization according to the actual integration capabilities.
+
+Include a threat model covering prompt injection, cross-project data leakage, unauthorized publishing, forged approval, replay attacks and malicious retrieved content.
+
+## 11. Database and messaging
+
+Create version-controlled migrations for:
+
+* `generation_jobs`
+* `generation_results`
+* `test_case_drafts`
+* `coverage_results`
+* `review_decisions`
+* `publication_records`
+* `audit_events`
+
+Add appropriate indexes, foreign keys, uniqueness constraints, timestamps and concurrency/version fields.
+
+Use Azure Service Bus with versioned message schemas and correlation IDs.
+
+Implement idempotent job submission, duplicate message handling, bounded retries, dead-letter recovery and graceful shutdown.
+
+Design for at-least-once message delivery with idempotent effects. Do not claim exactly-once processing across external systems.
+
+Avoid storing entire retrieved documents or sensitive data unless required and explicitly configured.
+
+## 12. AKS deployment
+
+Create Helm charts or equivalent maintainable Kubernetes manifests for:
+
+* Agent API Deployment and Service.
+* Agent worker Deployment.
+* Kubernetes service accounts.
+* Entra Workload ID configuration.
+* ConfigMaps and external secret integration.
+* Ingress or Gateway integration.
+* Network policies.
+* Resource requests and limits.
+* Startup, readiness and liveness probes.
+* Horizontal Pod Autoscaler.
+* Pod disruption budgets.
+* Topology spread or availability-zone placement where appropriate.
+* Security contexts and non-root execution.
+* Environment-specific values for development, staging and production.
+
+The agent runs in its own AKS cluster. The MCP server runs in its existing separate cluster.
+
+Document secure network connectivity between the clusters, including private DNS, firewall rules, TLS, service authentication and restricted egress.
+
+Use Azure Container Registry for images. Do not embed secrets in Helm values, Kubernetes manifests or container images.
+
+Use Azure Service Bus backlog or queue-depth-based KEDA scaling for workers where appropriate. Use HPA for the API and other workloads where suitable.
+
+Provide separate example configurations for local development, staging and production. Do not include fabricated production resource identifiers.
+
+## 13. Observability
+
+Implement structured logs, distributed tracing and metrics.
+
+Capture:
+
+* Correlation ID and job ID.
+* Workflow node and duration.
+* Sanitized error categories.
+* MCP latency and failures.
+* Model latency and throttling.
+* Token usage and cost estimates where available.
+* Validation failures.
+* Acceptance-criteria coverage.
+* Duplicate detection.
+* QA approval and rejection rates.
+* Publication failures.
+
+Instrument traces across API, Service Bus, worker, MCP, model and database.
+
+Never log chain-of-thought, credentials, authorization headers or unrestricted sensitive context.
+
+Provide example Azure Monitor alerts and dashboard guidance.
+
+## 14. Automated testing
+
+Create unit tests for:
+
+* Every workflow node.
+* MCP adapters.
+* Model adapters.
+* Schema validation.
+* Coverage evaluation.
+* Duplicate detection.
+* State transitions.
+* Authorization and approval rules.
+* Idempotency and concurrency controls.
+
+Create integration tests for:
+
+* Mock MCP retrieval.
+* Model output validation.
+* PostgreSQL persistence.
+* Service Bus job handling.
+* Failed-job recovery.
+* Human approval and publication.
+* Entra authentication middleware.
+
+Create end-to-end tests using a mocked MCP server and fake model.
+
+Add regression fixtures for representative JIRA stories and expected test-case quality properties.
+
+Never require production credentials for normal test execution.
+
+## 15. CI/CD
+
+Create GitHub Actions workflows that:
+
+1. Install dependencies using the lockfile.
+2. Run linting and formatting checks.
+3. Run TypeScript type checking.
+4. Run unit and integration tests.
+5. Build the application and container images.
+6. Scan dependencies and images.
+7. Publish versioned images to ACR.
+8. Deploy to staging.
+9. Run smoke tests.
+10. Require environment protection and explicit approval for production deployment.
+
+Use GitHub OIDC federation to Azure where configured. Never store long-lived Azure client secrets in GitHub repository variables.
+
+## 16. Required repository structure
+
+Use a maintainable structure similar to:
+
+`src/`
+
+* `api/`
+* `auth/`
+* `config/`
+* `graph/`
+* `graph/nodes/`
+* `mcp/`
+* `models/`
+* `prompts/`
+* `schemas/`
+* `services/`
+* `repositories/`
+* `messaging/`
+* `database/`
+* `observability/`
+* `security/`
+* `shared/`
+
+Also create:
+
+* `tests/unit/`
+* `tests/integration/`
+* `tests/e2e/`
+* `tests/fixtures/`
+* `migrations/`
+* `helm/`
+* `infra/` for applicable Azure IaC.
+* `.github/workflows/`
+* `Dockerfile`
+* `docker-compose.yml` for local dependencies where practical.
+* `.env.example`
+* `.gitignore`
+* `README.md`
+* `docs/architecture.md`
+* `docs/security.md`
+* `docs/operations.md`
+* `docs/runbook.md`
+* `docs/deployment.md`
+* `docs/model-configuration.md`
+
+Adjust the structure when repository conventions justify it.
+
+## 17. Acceptance criteria for this coding task
+
+The deliverable is complete only when:
+
+* The project compiles successfully.
+* The API and worker can run locally with mock MCP and model adapters.
+* A sample JIRA story can be processed end-to-end into validated draft test cases.
+* Acceptance-criteria coverage results are persisted and retrievable.
+* A reviewer can approve a draft.
+* Publishing is impossible without valid approval and authorization.
+* Failed jobs can be retried or recovered safely.
+* Database migrations run successfully.
+* Unit and end-to-end tests pass.
+* Docker images build.
+* Helm templates render successfully.
+* Kubernetes manifests include appropriate security controls and probes.
+* CI workflows pass validation.
+* README instructions enable a developer to run the project locally.
+* Production deployment prerequisites and assumptions are documented.
+
+## 18. Execution instructions
+
+Work incrementally:
+
+1. Inspect the repository and produce a concise implementation plan.
+2. Establish the project structure, dependencies, configuration and schemas.
+3. Implement the MCP and model adapter interfaces with working mocks.
+4. Implement the LangGraph workflow.
+5. Implement persistence, messaging and API endpoints.
+6. Implement authentication, authorization, review and publication controls.
+7. Add automated tests and regression fixtures.
+8. Create Docker, Helm, Azure infrastructure and CI/CD artifacts.
+9. Run the available build, type-check, test, lint and deployment-template validation commands.
+10. Fix failures and rerun the relevant checks.
+11. Update the README and operational documentation with actual implementation details.
+
+Do not stop after producing the plan. Continue implementing the project.
+
+If external Azure services are unavailable, make local development and mocked end-to-end execution fully functional, and document precisely what remains to be configured for real Azure deployment.
+
+At the end, provide a concise implementation report containing:
+
+* Files and components created.
+* Architecture decisions.
+* Commands to run locally.
+* Commands to execute tests.
+* Instructions to configure MCP and Azure AI Foundry.
+* Instructions to build and deploy to AKS.
+* Test results from commands actually executed.
+* Known limitations and unresolved production prerequisites.
+
+Start by inspecting the repository, then implement the solution.
