@@ -1,0 +1,83 @@
+
+flowchart TB
+    %% User-facing channels
+    subgraph CHANNELS["User Channels"]
+        direction LR
+        ADV["Adviser Portal"]
+        EMP["Employer Portal"]
+        CUS["Customer Portal"]
+    end
+
+    %% Frontend architecture
+    subgraph FRONTEND["Web Experience Layer"]
+        direction TB
+        MFE["Journey MFE<br/>Angular Microfrontends<br/>Encapsulates Web Journeys"]
+    end
+
+    %% API orchestration
+    subgraph API["API Orchestration Layer"]
+        GQL["GraphQL<br/>API Orchestration"]
+    end
+
+    %% Notification platform
+    subgraph NOTIFY["Notification Platform"]
+        direction TB
+        NS["Notification Service<br/>Java Microservice<br/>Orchestrates Notification Events"]
+        DB[("Notification Service DB<br/>MongoDB<br/>Stores Notification Events")]
+    end
+
+    %% Communication services
+    subgraph COMMS["Communications Platform"]
+        CH["CommsHub<br/>PDF Generation<br/>PDF Storage & Retrieval<br/>Email Distribution"]
+    end
+
+    %% Enterprise event streaming
+    subgraph EVENTS["Enterprise Event Streaming"]
+        ES["Enterprise Systems<br/>Event Producers"]
+        KAFKA[["Confluent Kafka<br/>Enterprise Event Processing"]]
+    end
+
+    %% Internal colleague access
+    subgraph INTERNAL["Internal Colleague Access"]
+        CRM["Microsoft Dynamics CRM<br/>Access to Outgoing Communications"]
+    end
+
+    %% Main user journey
+    ADV --> MFE
+    EMP --> MFE
+    CUS --> MFE
+    MFE --> GQL
+    GQL --> NS
+
+    %% Notification persistence
+    NS <--> DB
+
+    %% Communication orchestration
+    NS <--> |Notification requests and status| CH
+    CH --> |Outgoing emails and PDFs| EXT["External Recipients<br/>Adviser · Employer · Customer"]
+
+    %% Enterprise event flow
+    ES --> |Enterprise events| KAFKA
+    KAFKA --> |Event consumption| NS
+
+    %% CRM access
+    CRM --> |Retrieve communication records| CH
+
+    %% Styling
+    classDef portal fill:#E8F1FC,stroke:#3676B8,color:#17365D,stroke-width:1.5px
+    classDef frontend fill:#E5F4E8,stroke:#39834A,color:#194D27,stroke-width:1.5px
+    classDef api fill:#FFF0D9,stroke:#C58A25,color:#704600,stroke-width:1.5px
+    classDef service fill:#EDE5FA,stroke:#7854A6,color:#39245D,stroke-width:1.5px
+    classDef database fill:#FCE7E7,stroke:#B94A48,color:#762D2B,stroke-width:1.5px
+    classDef messaging fill:#DDF4F2,stroke:#258A82,color:#124F4B,stroke-width:1.5px
+    classDef crm fill:#E8EAF6,stroke:#5865A6,color:#252F65,stroke-width:1.5px
+    classDef external fill:#F3F4F6,stroke:#737B86,color:#303741,stroke-width:1.5px
+
+    class ADV,EMP,CUS portal
+    class MFE frontend
+    class GQL api
+    class NS,CH service
+    class DB database
+    class ES,KAFKA messaging
+    class CRM crm
+    class EXT external
